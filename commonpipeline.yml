@@ -1,0 +1,53 @@
+parameters:
+- name: env
+  displayName: Target Environment
+  type: string
+  default: DEV
+  values:
+  - DEV
+  - QA
+  - PROD
+trigger:
+  branches:
+    include:
+    - master
+stages:
+- stage: __default
+  jobs:
+  - job: Job
+    pool:
+      name: DemoEnvironmentAgent
+    steps:
+    - task: CmdLine@2
+      displayName: 'Verify Changes'
+      inputs:
+        script: >
+          call c:\apps\liquibase\liquibase.bat --username=$(LBMSSQLUSERNAME) --password=$(LBMSSQLPASSWORD)  --url jdbc:sqlserver://localhost:1433;database=cyclopsbi_DEV; --labels=$(labels) validate
+
+          call c:\apps\liquibase\liquibase.bat --username=$(LBMSSQLUSERNAME) --password=$(LBMSSQLPASSWORD)  --url jdbc:sqlserver://localhost:1433;database=cyclopsbi_DEV; tag JOBID_$(Build.BuildId)
+
+          call c:\apps\liquibase\liquibase.bat --username=$(LBMSSQLUSERNAME) --password=$(LBMSSQLPASSWORD)  --url jdbc:sqlserver://localhost:1433;database=cyclopsbi_DEV; --labels=$(labels) status --verbose
+        workingDirectory: Liquibase
+    - task: CmdLine@2
+      displayName: 'Deploy Changes'
+      inputs:
+        script: >
+          call c:\apps\liquibase\liquibase.bat --username=$(LBMSSQLUSERNAME) --password=$(LBMSSQLPASSWORD)  --url jdbc:sqlserver://localhost:1433;database=cyclopsbi_DEV; --labels=$(labels) updateSql
+
+          call c:\apps\liquibase\liquibase.bat --username=$(LBMSSQLUSERNAME) --password=$(LBMSSQLPASSWORD)  --url jdbc:sqlserver://localhost:1433;database=cyclopsbi_DEV; --labels=$(labels) update
+        workingDirectory: Liquibase
+    - task: CmdLine@2
+      displayName: 'Verify Deployment'
+      inputs:
+        script: >
+          call c:\apps\liquibase\liquibase.bat --username=$(LBMSSQLUSERNAME) --password=$(LBMSSQLPASSWORD)  --url jdbc:sqlserver://localhost:1433;database=cyclopsbi_DEV; --labels=$(labels) rollbackSQL JOBID_$(Build.BuildId)
+
+          call c:\apps\liquibase\liquibase.bat --username=$(LBMSSQLUSERNAME) --password=$(LBMSSQLPASSWORD)  --url jdbc:sqlserver://localhost:1433;database=cyclopsbi_DEV; --labels=$(labels) rollback JOBID_$(Build.BuildId)
+        workingDirectory: Liquibase
+    - task: CmdLine@2
+      displayName: 'Finalize'
+      inputs:
+        script: >
+          call c:\apps\liquibase\liquibase.bat --username=$(LBMSSQLUSERNAME) --password=$(LBMSSQLPASSWORD)  --url jdbc:sqlserver://localhost:1433;database=cyclopsbi_DEV; --labels=$(labels) update
+        workingDirectory: Liquibase
+

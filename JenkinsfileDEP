@@ -1,0 +1,89 @@
+node {
+	try {
+		bat 'echo iamhere'
+		// Environment Variables
+		env.appname  = "CyclopsBI"
+
+		env.scmCreds = "e0de9ac3-3636-48d7-b95e-35443ab32b53"
+		env.scmType  = "git"
+
+
+		env.labels = "${env.labels}".trim()
+		if (env.labels == 'default') {
+			env.labels = "${env.pipeline}"
+		}
+		
+		
+		// Handle deployver input
+		env.TargetEnvironment = "${env.TargetEnvironment}".trim()
+
+		def TargetEnvironment = "${env.TargetEnvironment}"
+		
+		deleteDir()
+
+		stage('Get Changes from Source') {
+			//simplified git params
+			git changelog: false, credentialsId: 'e0de9ac3-3636-48d7-b95e-35443ab32b53', poll: false, url: 'ssh://jenkins@win-20e107kb4tn:7999/cyc/code.git'
+		}//stage Get CHanges from Source
+		
+		stage('Verify Changes') {
+		
+			withCredentials([usernamePassword(credentialsId: 'mssql', usernameVariable: 'LBMSSQLUSERNAME', passwordVariable: 'LBMSSQLPASSWORD')]) {
+					//run a validate to ensure the changelog is in a processable state
+					bat 'cd Liquibase && liquibase --username=%LBMSSQLUSERNAME% --password=%LBMSSQLPASSWORD%  --url jdbc:sqlserver://localhost:1433;database=cyclopsbi_%TargetEnvironment%; --labels=%Labels% validate'
+					//set a tag point to delimit the batch of changes
+					bat 'cd Liquibase && liquibase --username=%LBMSSQLUSERNAME% --password=%LBMSSQLPASSWORD%  --url jdbc:sqlserver://localhost:1433;database=cyclopsbi_%TargetEnvironment%; tag BUILD_%BUILD_NUMBER%'
+					//get & display the current status for record keeping, potential troubleshooting, audit, etc.
+					bat 'cd Liquibase && liquibase --username=%LBMSSQLUSERNAME% --password=%LBMSSQLPASSWORD%  --url jdbc:sqlserver://localhost:1433;database=cyclopsbi_%TargetEnvironment%; --labels=%Labels% status --verbose'
+			}//with Credentials
+		
+		}//stage Verify Changes
+		
+		stage('Deploy Changes') {
+
+			withCredentials([usernamePassword(credentialsId: 'mssql', usernameVariable: 'LBMSSQLUSERNAME', passwordVariable: 'LBMSSQLPASSWORD')]) {
+					//get & display the SQL to be used in the update for record keeping, potential troubleshooting, audit, etc.
+					bat 'cd Liquibase && liquibase --username=%LBMSSQLUSERNAME% --password=%LBMSSQLPASSWORD%  --url jdbc:sqlserver://localhost:1433;database=cyclopsbi_%TargetEnvironment%; --labels=%Labels% updateSql'
+					//actually run the update command to put the changes into the database
+					bat 'cd Liquibase && liquibase --username=%LBMSSQLUSERNAME% --password=%LBMSSQLPASSWORD% --url jdbc:sqlserver://localhost:1433;database=cyclopsbi_%TargetEnvironment%; --labels=%Labels% update'						
+			}//with Credentials		
+		
+		}//stage Deploy Changes
+		
+		stage('Verify Deployment') {
+			if (TargetEnvironment != "PROD") {
+				withCredentials([usernamePassword(credentialsId: 'mssql', usernameVariable: 'LBMSSQLUSERNAME', passwordVariable: 'LBMSSQLPASSWORD')]) {
+						//get and display the rollback sql 
+						bat 'cd Liquibase && liquibase --username=%LBMSSQLUSERNAME% --password=%LBMSSQLPASSWORD% --url jdbc:sqlserver://localhost:1433;database=cyclopsbi_%TargetEnvironment%; rollbackSQL BUILD_%BUILD_NUMBER%'
+						//test the rollback
+						bat 'cd Liquibase && liquibase --username=%LBMSSQLUSERNAME% --password=%LBMSSQLPASSWORD% --url jdbc:sqlserver://localhost:1433;database=cyclopsbi_%TargetEnvironment%; rollback BUILD_%BUILD_NUMBER%'						
+				}//with Credentials	
+			}//if
+			else {
+				echo "rollback test not run in PROD"
+			}//else
+		}//stage Verify Deployment
+		
+		stage('Finalize') {
+			withCredentials([usernamePassword(credentialsId: 'mssql', usernameVariable: 'LBMSSQLUSERNAME', passwordVariable: 'LBMSSQLPASSWORD')]) {
+					//reapply the update
+					bat 'cd Liquibase && liquibase --username=%LBMSSQLUSERNAME% --password=%LBMSSQLPASSWORD% --url jdbc:sqlserver://localhost:1433;database=cyclopsbi_%TargetEnvironment%; --labels=%Labels% update'			
+					//take a snapshot
+					bat 'cd Liquibase && liquibase --username=%LBMSSQLUSERNAME% --password=%LBMSSQLPASSWORD% --url jdbc:sqlserver://localhost:1433;database=cyclopsbi_%TargetEnvironment%; --outputFile=CyclopsBI_%TargetEnvironment%_BUILD_%BUILD_NUMBER%.json snapshot --snapshotFormat=json'
+			}//with Credentials		
+			bat 'cd Liquibase && copy CyclopsBI_%TargetEnvironment%_BUILD_%BUILD_NUMBER%.json C:\\Users\\Administrator\\git\\CyclopsBI\\Snapshots'
+		}//stage Finalize
+			
+	}
+	catch (e) {
+		// If there was an exception thrown, the build failed
+		currentBuild.result = "FAILED"
+		throw e
+	} 
+	finally {
+		// Success or failure, always send notifications
+		bat 'echo finally'
+		
+	}
+	
+}
