@@ -1,0 +1,62 @@
+variables:
+- name: appname
+  value: SURAPOC
+- name: version
+  value: $(Build.BuildId)
+parameters:
+- name: labels
+  displayName: Label to Delpoy
+  default: pipeline1
+  type: string
+- name: pipeline
+  displayName: Pipeline
+  type: string
+  default: pipeline1
+  values:
+  - pipeline1
+- name: env
+  displayName: Target Environment
+  type: string
+  default: DEV
+  values:
+  - DEV
+  - UAT
+resources:
+  pipelines:
+  - pipeline: SuraPOCPackaging
+    source: "Sura LBE Pipeline - Package"
+trigger:
+  branches:
+    include:
+    - none
+stages:
+- stage: __default
+  jobs:
+  - job: Job
+    pool:
+      name: SuraPoc
+    workspace:
+      clean: all
+    steps:
+    - task: 30f35852-3f7e-4c0c-9a88-e127b4f97211@1
+      displayName: "Download DB Artifact Version"
+      inputs:
+        alias: SuraPOCPackaging
+        artifact: POCDatabaseArtifact
+    - task: CmdLine@2
+      displayName: "Unzip database package"
+      inputs:
+        script: |
+          cd ..\SuraPOCPackaging\POCDatabaseArtifact
+          pwd
+          c:\apps\7-Zip\7za.exe x *zip
+    - task: CmdLine@2
+      displayName: "Deploy Changes to Target Environment"
+      inputs:
+        script: >
+          cd ..\SuraPOCPackaging\POCDatabaseArtifact
+
+          call hammer forecast --labels pipeline1 --pipeline pipeline1 DEV
+
+          call hammer deploy --labels pipeline1 --pipeline pipeline1 DEV
+

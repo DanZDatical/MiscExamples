@@ -1,0 +1,82 @@
+resources:
+  repositories:
+  - repository: LBEStatusRepository
+    type: git
+    name: Sura POC/ddb
+variables:
+- name: appname
+  value: SURAPOC
+- name: version
+  value: $(Build.BuildId)
+parameters:
+- name: pipeline
+  displayName: Pipeline
+  type: string
+  default: pipeline1
+  values:
+  - pipeline1
+trigger:
+  branches:
+    include:
+    - none
+stages:
+- stage: __default
+  jobs:
+  - job: Job
+    pool:
+      name: SuraPoc
+    workspace:
+      clean: all
+    steps:
+    - task: CmdLine@2
+      displayName: 'Clean Workspace'
+      inputs:
+        script: >
+          del *.* /S /Q
+
+          md SURAPOC
+    - task: CmdLine@2
+      displayName: 'Get DDB Repository'
+      inputs:
+        script: >
+          cd SURAPOC
+
+          git clone git@ssh.dev.azure.com:v3/dzentgraf-pipelines/"Sura POC"/ddb
+
+          cd ddb
+
+          git config user.name Developer
+
+          git config user.email dev@company.local
+    - task: CmdLine@2
+      displayName: 'Get SRC Repository'
+      inputs:
+        script: >
+          cd SURAPOC
+
+          git clone git@ssh.dev.azure.com:v3/dzentgraf-pipelines/"Sura POC"/src
+
+          cd src
+
+          git config user.name Developer
+
+          git config user.email dev@company.local
+    - task: CmdLine@2
+      displayName: 'Run Packager'
+      inputs:
+        script: >
+          cd SURAPOC\ddb\SURAPOC
+
+          call hammer groovy deployPackager.groovy --daticalServer=datical-server pipeline=pipeline1 scm=true
+    - task: CmdLine@2
+      displayName: 'Package Artifact'
+      inputs:
+        script: >
+          cd SURAPOC\ddb\SURAPOC
+
+          call c:\apps\7-Zip\7za.exe a -tzip -x!.git -x!.svn -x!Logs -x!Reports -x!Snapshots -x!Profiles -x!.classpath -x!.gitignore -x!.metadata -x!.project -x!.reporttemplates -x!daticaldb.log -x!deployPackager.properties -x!svn-ignore.properties ..\\..\\SURAPOCDB-$(Build.BuildId).zip
+    - task: ecdc45f6-832d-4ad9-b52b-ee49e94659be@1
+      inputs:
+        path: SURAPOC/SURAPOCDB-$(Build.BuildId).zip
+        artifactName: POCDatabaseArtifact
+
